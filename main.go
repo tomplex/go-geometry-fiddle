@@ -1,15 +1,31 @@
 package main
 
 import (
-
-	"github.com/paulsmith/gogeos/geos"
-
-	_ "github.com/lib/pq"
-
 	"log"
 	"fmt"
 
+	"github.com/paulsmith/gogeos/geos"
+	"database/sql"
+
+	_ "github.com/lib/pq"
+
+
 )
+
+var connection *sql.DB
+
+func init() {
+	connectionString := "host=172.17.0.2 dbname=aqueousband_com user=postgres password=postgres port=5432 sslmode=disable"
+
+	var err error
+	connection, err = sql.Open(
+		"postgres",
+		connectionString,
+	)
+
+	err = connection.Ping()
+	check(err)
+}
 
 
 func check(err error) {
@@ -22,33 +38,28 @@ func check(err error) {
 
 func main() {
 
-	TestConnect()
-
-	statesQuery, err := connection.Query("SELECT statefp, name, st_astext(geom) FROM us_states")
-	check(err)
-
 	states := make([]*State, 0)
 	venues := make([]*Venue, 0)
-	//NYvenues := make([]Venue, 0)
+
 	venuesFinished := make(chan *Venue)
 
 	var geomText string
+
+	statesQuery, err := connection.Query("SELECT statefp, name, st_astext(geom) FROM us_states")
+	check(err)
 
 	for statesQuery.Next() {
 		st := &State{}
 
 		err = statesQuery.Scan(&st.Fips, &st.Name, &geomText)
-
 		check(err)
 
 		geom := geos.Must(geos.FromWKT(geomText))
 		st.Geom = *geom
-
 		st.Prepare()
 
 		states = append(states, st)
 	}
-
 
 	venuesQuery, err := connection.Query("SELECT name, st_astext(geom) FROM venues WHERE geom IS NOT NULL")
 
@@ -56,19 +67,16 @@ func main() {
 		ven := &Venue{}
 
 		err = venuesQuery.Scan(&ven.Name, &geomText)
-
 		check(err)
 
 		geom := geos.Must(geos.FromWKT(geomText))
 		ven.Geom = *geom
-
 		ven.Prepare()
 
 		venues = append(venues, ven)
 	}
 
 	for _, venue := range venues {
-		//AssignState(venue, states)
 		go func(v *Venue) {
 			for _, state := range states {
 
@@ -84,7 +92,6 @@ func main() {
 		}(venue)
 
 	}
-
 
 	for v := range venuesFinished {
 		fmt.Printf("Venue: %s, State: %s  \n", v.Name, v.State)

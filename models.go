@@ -44,22 +44,3 @@ type Neighborhood struct {
 func (n *Neighborhood) Prepare() {
 	n.PGeom = *n.Geom.Prepare()
 }
-
-//type ScanableGeometry struct{
-//	geos.Geometry
-//}
-//
-//func (g *ScanableGeometry) Scan(value interface{}) (error) {
-//	if value == nil {
-//		return errors.New("empty geometry")
-//	}
-//	s, ok := value.(string)
-//
-//	if ok {
-//		*g = geos.Must(geos.FromWKT(s))
-//		return nil
-//	} else {
-//		return errors.New("scan failed for value " + string(s))
-//	}
-//}
-
