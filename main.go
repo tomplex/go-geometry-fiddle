@@ -8,11 +8,9 @@ import (
 
 	"log"
 	"fmt"
+
 )
 
-func init() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-}
 
 func check(err error) {
 	if err != nil {
@@ -26,19 +24,20 @@ func main() {
 
 	TestConnect()
 
-	rows, err := connection.Query("SELECT statefp, name, st_astext(geom) FROM us_states WHERE name = 'New York'")
+	statesQuery, err := connection.Query("SELECT statefp, name, st_astext(geom) FROM us_states")
 	check(err)
 
-	states := make([]State, 0)
-	venues := make([]Venue, 0)
-	NYvenues := make([]Venue, 0)
+	states := make([]*State, 0)
+	venues := make([]*Venue, 0)
+	//NYvenues := make([]Venue, 0)
+	venuesFinished := make(chan *Venue)
 
 	var geomText string
 
-	for rows.Next() {
-		st := State{}
+	for statesQuery.Next() {
+		st := &State{}
 
-		err = rows.Scan(&st.Fips, &st.Name, &geomText)
+		err = statesQuery.Scan(&st.Fips, &st.Name, &geomText)
 
 		check(err)
 
@@ -50,12 +49,13 @@ func main() {
 		states = append(states, st)
 	}
 
-	rows, err = connection.Query("SELECT name, st_astext(geom) FROM venues WHERE geom IS NOT NULL")
 
-	for rows.Next() {
-		ven := Venue{}
+	venuesQuery, err := connection.Query("SELECT name, st_astext(geom) FROM venues WHERE geom IS NOT NULL")
 
-		err = rows.Scan(&ven.Name, &geomText)
+	for venuesQuery.Next() {
+		ven := &Venue{}
+
+		err = venuesQuery.Scan(&ven.Name, &geomText)
 
 		check(err)
 
@@ -68,22 +68,35 @@ func main() {
 	}
 
 	for _, venue := range venues {
-		for _, state := range states {
+		//AssignState(venue, states)
+		go func(v *Venue) {
+			for _, state := range states {
 
-			intersects, err := state.PGeom.Intersects(&venue.Geom)
-			check(err)
+				intersects, err := state.PGeom.Intersects(&v.Geom)
+				check(err)
 
-			if intersects {
-				venue.State = state.Name
-				fmt.Printf("Venue: %s, State: %s  \n", venue.Name, venue.State)
-			} else {
+				if intersects {
+					v.SetState(state.Name)
+					venuesFinished <- v
 
+				}
 			}
-		}
+		}(venue)
+
 	}
 
-	//for _, venue := range venues {
-	//	fmt.Printf("Venue: %s, State: %s  \n", venue.Name, venue.State)
+
+	for v := range venuesFinished {
+		fmt.Printf("Venue: %s, State: %s  \n", v.Name, v.State)
+	}
+
+	//nbrsQuery, err := connection.Query("SELECT nid, neighborhd, st_astext(geog) FROM neighborhoods")
+	//
+	//for nbrsQuery.Next() {
+	//	nbr := Neighborhood{}
+	//
+	//	err = nbrsQuery.Scan(&nbr.Nid, &nbr.Name, geomText)
+	//
 	//}
 
 }
