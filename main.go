@@ -9,12 +9,16 @@ import (
 
 	_ "github.com/lib/pq"
 
-
+	"runtime"
+	"bufio"
+	"os"
 )
 
 var connection *sql.DB
 
 func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	connectionString := "host=172.17.0.2 dbname=aqueousband_com user=postgres password=postgres port=5432 sslmode=disable"
 
 	var err error
@@ -44,6 +48,11 @@ func main() {
 	venuesFinished := make(chan *Venue)
 
 	var geomText string
+
+	f, err := os.Create("/home/tom/data/AQ_venue_state.csv")
+	check(err)
+
+	defer f.Close()
 
 	statesQuery, err := connection.Query("SELECT statefp, name, st_astext(geom) FROM us_states")
 	check(err)
@@ -76,27 +85,40 @@ func main() {
 		venues = append(venues, ven)
 	}
 
+
+
 	for _, venue := range venues {
 		go func(v *Venue) {
+			match := "N/A"
 			for _, state := range states {
 
 				intersects, err := state.PGeom.Intersects(&v.Geom)
 				check(err)
 
 				if intersects {
-					v.SetState(state.Name)
-					venuesFinished <- v
-
+					match = state.Name
+					break
 				}
 			}
+			v.SetState(match)
+			venuesFinished <- v
 		}(venue)
-
 	}
 
-	for v := range venuesFinished {
-		fmt.Printf("Venue: %s, State: %s  \n", v.Name, v.State)
+	writer := bufio.NewWriter(f)
+	defer writer.Flush()
+
+	_, err = writer.WriteString(fmt.Sprintf("venue,state\n"))
+
+
+	for v := 0; v < len(venues); v++ {
+		msg := <- venuesFinished
+		//fmt.Printf("Venue: %s, State: %s  \n", msg.Name, msg.State)
+		_, err = writer.WriteString(fmt.Sprintf("%s,%s\n", msg.Name, msg.State))
 	}
 
+	close(venuesFinished)
+	
 	//nbrsQuery, err := connection.Query("SELECT nid, neighborhd, st_astext(geog) FROM neighborhoods")
 	//
 	//for nbrsQuery.Next() {
